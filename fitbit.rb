@@ -1,14 +1,13 @@
-require 'date'
 require 'thor'
 require 'fileutils'
 require 'logger'
+require 'yaml'
+require 'fitgem_oauth2'
 require 'date'
-require 'json'
-require 'fitbit_api'
 require 'influxdb'
 
 LOGFILE = File.join(Dir.home, '.fitbit.log')
-CREDENTIALS_PATH = File.join(Dir.home, '.credentials', "fitbit.yaml")
+CREDENTIALS_PATH = File.join(Dir.home, '.credentials', 'fitbit.yaml')
 
 class Fitbit < Thor
   no_commands {
@@ -33,32 +32,48 @@ class Fitbit < Thor
     end
   }
 
-  class_option :log,     :type => :boolean, :default => true, :desc => "log output to ~/.fitbit.log"
-  class_option :verbose, :type => :boolean, :aliases => "-v", :desc => "increase verbosity"
+  class_option :log,     :type => :boolean, :default => true, :desc => 'log output to ~/.fitbit.log'
+  class_option :verbose, :type => :boolean, :aliases => '-v', :desc => 'increase verbosity'
+  class_option :dry_run, :type => :boolean, :aliases => '-d', :desc => 'do not write to database'
 
-  desc "record-status", "record the current data to database"
+  desc 'record-status', 'record the current data to database'
   def record_status
     setup_logger
 
     credentials = YAML.load_file CREDENTIALS_PATH
 
-    client = FitbitAPI::Client.new client_id:     credentials[:client_id],
-                                   client_secret: credentials[:client_secret],
-                                   access_token:  credentials[:access_token],
-                                   refresh_token: credentials[:refresh_token],
-                                   user_id:       credentials[:user_id]
+    client = FitgemOauth2::Client.new client_id:     credentials[:client_id],
+                                      client_secret: credentials[:client_secret],
+                                      token:         credentials[:access_token],
+                                      user_id:       credentials[:user_id],
+                                      unit_system:   'en_US'
 
-
-    puts client.weight_logs (Date.today)
-
-    exit  # ************
-
+    records = client.weight_logs start_date: Date.today, period: '7d'
     influxdb = InfluxDB::Client.new 'fitbit'
-    data = {
-      values: { value: SOMEVALUE },
-      timestamp: REPORTED_TIME - Time.now.utc_offset
+
+    records['weight'].each { |rec|
+      # {"bmi"=>21.21,
+      #  "date"=>"2018-10-04",
+      #  "fat"=>18.981000900268555,
+      #  "logId"=>1538664676000,
+      #  "source"=>"Aria",
+      #  "time"=>"14:51:16",
+      #  "weight"=>66.6}
+      utc_time = (DateTime.parse rec['date'] + ' ' + rec['time']).to_time.to_i - Time.now.utc_offset
+      data = {
+        values: { value: rec['weight'].to_f },
+        timestamp: utc_time
+      }
+      $logger.info "weight: #{data}"
+      influxdb.write_point('weight', data)
+
+      data = {
+        values: { value: rec['fat'].to_f},
+        timestamp: utc_time
+      }
+      $logger.info "fat: #{data}"
+      influxdb.write_point('fat', data)
     }
-    influxdb.write_point('MEASURE', data)
   end
 end
 

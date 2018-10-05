@@ -1,7 +1,7 @@
 source 'https://rubygems.org'
 
 gem 'thor'
-gem 'fitbit_api'
+gem 'fitgem_oauth2'
 gem 'influxdb'
 
 # for robe:
