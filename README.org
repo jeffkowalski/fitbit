@@ -1,0 +1,1 @@
+Follow OAuth2 flow here https://dev.fitbit.com/apps/details/22D8FZ
