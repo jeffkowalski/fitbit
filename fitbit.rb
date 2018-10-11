@@ -6,7 +6,7 @@ require 'fitgem_oauth2'
 require 'date'
 require 'influxdb'
 
-LOGFILE = File.join(Dir.home, '.fitbit.log')
+LOGFILE = File.join(Dir.home, '.log', '.fitbit.log')
 CREDENTIALS_PATH = File.join(Dir.home, '.credentials', 'fitbit.yaml')
 
 class Fitbit < Thor
