@@ -1,1 +1,16 @@
+fitbit - read data from fitbit aria scale and record to influxdb
+
+* Install
+bundle install
+* Authorize
 Follow OAuth2 flow here https://dev.fitbit.com/apps/details/22D8FZ
+* Scan
+Usage:
+  fitbit.rb record-status
+
+Options:
+      [--log], [--no-log]          # log output to ~/.log/.fitbit.log
+                                   # Default: true
+  -v, [--verbose], [--no-verbose]  # increase verbosity
+
+Record current data to database
