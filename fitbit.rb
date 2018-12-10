@@ -50,7 +50,7 @@ class Fitbit < Thor
                                       user_id: credentials[:user_id],
                                       unit_system: 'en_US'
 
-    records = client.weight_logs start_date: Time.now.strftime('%Y-%m-%d'), period: '7d'
+    records = client.weight_logs start_date: 'today', period: '7d'
     influxdb = InfluxDB::Client.new 'fitbit'
 
     records['weight'].each do |rec|
