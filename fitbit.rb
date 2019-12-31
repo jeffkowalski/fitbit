@@ -42,40 +42,44 @@ class Fitbit < Thor
   def record_status
     setup_logger
 
-    credentials = YAML.load_file CREDENTIALS_PATH
+    begin
+      credentials = YAML.load_file CREDENTIALS_PATH
 
-    client = FitgemOauth2::Client.new client_id: credentials[:client_id],
-                                      client_secret: credentials[:client_secret],
-                                      token: credentials[:access_token],
-                                      user_id: credentials[:user_id],
-                                      unit_system: 'en_US'
+      client = FitgemOauth2::Client.new client_id: credentials[:client_id],
+                                        client_secret: credentials[:client_secret],
+                                        token: credentials[:access_token],
+                                        user_id: credentials[:user_id],
+                                        unit_system: 'en_US'
 
-    records = client.weight_logs start_date: 'today', period: '7d'
-    influxdb = InfluxDB::Client.new 'fitbit'
+      records = client.weight_logs start_date: 'today', period: '7d'
+      influxdb = InfluxDB::Client.new 'fitbit'
 
-    records['weight'].each do |rec|
-      # {"bmi"=>21.21,
-      #  "date"=>"2018-10-04",
-      #  "fat"=>18.981000900268555,
-      #  "logId"=>1538664676000,
-      #  "source"=>"Aria",
-      #  "time"=>"14:51:16",
-      #  "weight"=>66.6}
-      utc_time = Time.parse(rec['date'] + ' ' + rec['time']).to_i
+      records['weight'].each do |rec|
+        # {"bmi"=>21.21,
+        #  "date"=>"2018-10-04",
+        #  "fat"=>18.981000900268555,
+        #  "logId"=>1538664676000,
+        #  "source"=>"Aria",
+        #  "time"=>"14:51:16",
+        #  "weight"=>66.6}
+        utc_time = Time.parse(rec['date'] + ' ' + rec['time']).to_i
 
-      data = {
-        values: { value: rec['weight'].to_f },
-        timestamp: utc_time
-      }
-      @logger.info "weight: #{data}"
-      influxdb.write_point('weight', data) unless options[:dry_run]
+        data = {
+          values: { value: rec['weight'].to_f },
+          timestamp: utc_time
+        }
+        @logger.info "weight: #{data}"
+        influxdb.write_point('weight', data) unless options[:dry_run]
 
-      data = {
-        values: { value: rec['fat'].to_f },
-        timestamp: utc_time
-      }
-      @logger.info "fat: #{data}"
-      influxdb.write_point('fat', data) unless options[:dry_run]
+        data = {
+          values: { value: rec['fat'].to_f },
+          timestamp: utc_time
+        }
+        @logger.info "fat: #{data}"
+        influxdb.write_point('fat', data) unless options[:dry_run]
+      end
+    rescue StandardError => e
+      @logger.error e
     end
   end
 end
