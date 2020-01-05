@@ -3,7 +3,7 @@
 source 'https://rubygems.org'
 
 gem 'fitgem_oauth2'
-gem 'influxdb'
+gem 'influxdb', git: 'https://github.com/jeffkowalski/influxdb-ruby.git'
 gem 'thor'
 
 # for robe:

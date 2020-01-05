@@ -1,3 +1,9 @@
+GIT
+  remote: https://github.com/jeffkowalski/influxdb-ruby.git
+  revision: 1cfcc503b96b7e275a7f629def3a42d7357d9b93
+  specs:
+    influxdb (0.7.1)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -6,7 +12,6 @@ GEM
       multipart-post (>= 1.2, < 3)
     fitgem_oauth2 (2.0.1)
       faraday (~> 0.9)
-    influxdb (0.7.0)
     method_source (0.9.2)
     multipart-post (2.1.1)
     pry (0.12.2)
@@ -23,7 +28,7 @@ PLATFORMS
 
 DEPENDENCIES
   fitgem_oauth2
-  influxdb
+  influxdb!
   method_source (>= 0.8.2)
   pry
   pry-doc (>= 0.6.0)
