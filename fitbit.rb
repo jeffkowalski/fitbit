@@ -50,8 +50,7 @@ class Fitbit < Thor
          "client_id=#{credentials[:client_id]}&" \
          'redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fusers%2Fauth%2Ffitbit%2Fcallback&' \
          'scope=activity%20heartrate%20location%20nutrition%20profile%20settings%20sleep%20social%20weight&' \
-         'expires_in=604800'
-
+         'expires_in=31536000'
     puts 'Then paste the URL where the browser is redirected:'
     url = STDIN.gets.chomp
     # url = 'http://localhost:3000/users/auth/fitbit/callback?code=...#_=_'
