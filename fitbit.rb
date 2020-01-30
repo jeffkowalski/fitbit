@@ -10,6 +10,8 @@ require 'fitgem_oauth2'
 require 'influxdb'
 require 'time'
 require 'base64'
+require 'addressable/uri'
+require 'json'
 
 LOGFILE = File.join(Dir.home, '.log', 'fitbit.log')
 CREDENTIALS_PATH = File.join(Dir.home, '.credentials', 'fitbit.yaml')
@@ -41,37 +43,49 @@ class Fitbit < Thor
   class_option :verbose, type: :boolean, aliases: '-v', desc: 'increase verbosity'
 
   desc 'authorize', 'authorize this application, and authenticate with the service'
-  # automates this: https://dev.fitbit.com/apps/oauthinteractivetutorial
+  # automates https://dev.fitbit.com/apps/oauthinteractivetutorial,
+  # implementing authorization code grant flow, as described here
+  # https://dev.fitbit.com/build/reference/web-api/oauth2/
   def authorize
     credentials = YAML.load_file CREDENTIALS_PATH
-    puts 'Log in here:'
-    puts 'https://www.fitbit.com/oauth2/authorize?' \
-         'response_type=code&' \
-         "client_id=#{credentials[:client_id]}&" \
-         'redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fusers%2Fauth%2Ffitbit%2Fcallback&' \
-         'scope=activity%20heartrate%20location%20nutrition%20profile%20settings%20sleep%20social%20weight&' \
-         'expires_in=31536000'
+
+    login = Addressable::URI.parse credentials[:authorization_uri]
+    login.query_values = {
+      client_id: credentials[:client_id],
+      response_type: 'code',
+      scope: 'activity heartrate location nutrition profile settings sleep social weight',
+      redirect_uri: credentials[:callback_url]
+    }
+    puts 'Log in here:', login
     puts 'Then paste the URL where the browser is redirected:'
     url = STDIN.gets.chomp
     # url = 'http://localhost:3000/users/auth/fitbit/callback?code=...#_=_'
     code = url[/code=([^&#]+)/, 1]
-    puts code
+    # puts code
 
-    payload = "clientId=#{credentials[:client_id]}&grant_type=authorization_code&" \
-              "redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fusers%2Fauth%2Ffitbit%2Fcallback&code=#{code}"
-    puts payload
-    response = RestClient.post 'https://api.fitbit.com/oauth2/token',
+    payload = Addressable::URI.new
+    payload.query_values = {
+      clientid: credentials[:client_id],
+      grant_type: 'authorization_code',
+      redirect_uri: credentials[:callback_url],
+      code: code
+    }
+    payload = payload.to_s.delete_prefix '?'
+    # puts payload
+    response = RestClient.post credentials[:token_request_uri],
                                payload,
-                               authorization: 'Basic ' + Base64.encode64(credentials[:client_id] + ':' + credentials[:client_secret]),
+                               authorization: 'Basic ' + Base64.strict_encode64(credentials[:client_id] + ':' + credentials[:client_secret]),
                                content_type: 'application/x-www-form-urlencoded'
-    puts response
-    # {"access_token":"...","expires_in":28800,"refresh_token":"...","scope":"...","token_type":"Bearer","user_id":"..."}
+    # puts response
+    # response = {"access_token":"...","expires_in":28800,"refresh_token":"...","scope":"...","token_type":"Bearer","user_id":"..."}
     token = JSON.parse(response)
     credentials[:access_token] = token['access_token']
     credentials[:refresh_token] = token['refresh_token']
     File.open(CREDENTIALS_PATH, 'w') { |file| file.write(credentials.to_yaml) }
-  rescue StandardError => e
-    p e
+  rescue RestClient::ExceptionWithResponse => e
+    p e, JSON.parse(e.response)
+  else
+    puts 'authorization successful'
   end
 
 
@@ -83,27 +97,36 @@ class Fitbit < Thor
     begin
       credentials = YAML.load_file CREDENTIALS_PATH
 
-      client = FitgemOauth2::Client.new client_id: credentials[:client_id],
-                                        client_secret: credentials[:client_secret],
-                                        token: credentials[:access_token],
-                                        user_id: credentials[:user_id],
-                                        unit_system: 'en_US'
-      token = client.refresh_access_token credentials[:refresh_token]
-      credentials[:access_token] = token['access_token']
-      credentials[:refresh_token] = token['refresh_token']
-      File.open(CREDENTIALS_PATH, 'w') { |file| file.write(credentials.to_yaml) }
-      records = client.weight_logs start_date: 'today', period: '7d'
+      records = begin
+                  already_retried = false
+                  client = FitgemOauth2::Client.new client_id: credentials[:client_id],
+                                                    client_secret: credentials[:client_secret],
+                                                    token: credentials[:access_token],
+                                                    user_id: credentials[:user_id],
+                                                    unit_system: 'en_US'
+                  client.weight_logs start_date: 'today', period: '7d'
+                rescue FitgemOauth2::UnauthorizedError => e
+                  raise if already_retried
+
+                  already_retried = true
+                  @logger.info "caught #{e}, refreshing"
+                  token = client.refresh_access_token credentials[:refresh_token]
+                  credentials[:access_token] = token['access_token']
+                  credentials[:refresh_token] = token['refresh_token']
+                  File.open(CREDENTIALS_PATH, 'w') { |file| file.write(credentials.to_yaml) }
+                  retry
+                end
 
       influxdb = InfluxDB::Client.new 'fitbit'
 
       records['weight'].each do |rec|
-        # {"bmi"=>21.21,
-        #  "date"=>"2018-10-04",
-        #  "fat"=>18.981000900268555,
-        #  "logId"=>1538664676000,
-        #  "source"=>"Aria",
-        #  "time"=>"14:51:16",
-        #  "weight"=>66.6}
+        # rec = {"bmi"=>21.21,
+        #        "date"=>"2018-10-04",
+        #        "fat"=>18.981000900268555,
+        #        "logId"=>1538664676000,
+        #        "source"=>"Aria",
+        #        "time"=>"14:51:16",
+        #        "weight"=>66.6}
         utc_time = Time.parse(rec['date'] + ' ' + rec['time']).to_i
 
         data = {
