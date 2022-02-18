@@ -73,12 +73,12 @@ class Fitbit < RecorderBotBase
                   token = client.refresh_access_token credentials[:refresh_token]
                   credentials[:access_token] = token['access_token']
                   credentials[:refresh_token] = token['refresh_token']
-                  File.open(CREDENTIALS_PATH, 'w') { |file| file.write(credentials.to_yaml) }
+                  store_credentials credentials
                   retry
                 end
 
-      influxdb = InfluxDB::Client.new 'fitbit'
-
+      influxdb = InfluxDB::Client.new 'fitbit' unless options[:dry_run]
+      data = []
       records['weight'].each do |rec|
         # rec = {"bmi"=>21.21,
         #        "date"=>"2018-10-04",
@@ -89,20 +89,14 @@ class Fitbit < RecorderBotBase
         #        "weight"=>66.6}
         utc_time = Time.parse(rec['date'] + ' ' + rec['time']).to_i
 
-        data = {
-          values: { value: rec['weight'].to_f },
-          timestamp: utc_time
-        }
-        @logger.info "weight: #{data}"
-        influxdb.write_point('weight', data) unless options[:dry_run]
-
-        data = {
-          values: { value: rec['fat'].to_f },
-          timestamp: utc_time
-        }
-        @logger.info "fat: #{data}"
-        influxdb.write_point('fat', data) unless options[:dry_run]
+        %w[bmi fat weight].each do |measure|
+          data.push({ series: measure,
+                      values: { value: rec[measure].to_f },
+                      timestamp: utc_time })
+          @logger.info "#{measure}: #{data}"
+        end
       end
+      influxdb.write_points(data) unless options[:dry_run]
     end
   end
 end
